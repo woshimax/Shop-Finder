@@ -13,6 +13,9 @@ import com.hmdp.utils.RedisConstants;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>
@@ -43,11 +46,27 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
             //数据库都不存在直接返回错误信息
             return Result.fail("不存在商户信息");
         }
-        //4、从数据库中加载到redis中
-        stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY+id,JSONUtil.toJsonStr(shop));
+        //4、从数据库中加载到redis中（加上延时删除）
+        stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY+id,JSONUtil.toJsonStr(shop),RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
         //5、直接返回数据库中查到到信息
         //注：其实也就是数据库中查到信息两个作用：一个是存入redis，一个是反给前端
 
         return Result.ok(shop);
+    }
+
+    @Override
+    @Transactional//这里的@Transactional注意，控制方法方便回滚
+    public Result update(Shop shop) {
+        Long id = shop.getId();
+        if(id == null){
+            return Result.fail("店铺id不为空");
+        }
+        //先更新数据库，再删除缓存
+        //1、更新数据库
+        updateById(shop);
+        //2、删除缓存
+
+        stringRedisTemplate.delete(RedisConstants.CACHE_SHOP_KEY+ id);
+        return Result.ok();
     }
 }
