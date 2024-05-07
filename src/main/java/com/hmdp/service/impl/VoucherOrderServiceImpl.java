@@ -2,6 +2,7 @@ package com.hmdp.service.impl;
 
 import cn.hutool.core.io.resource.StringResource;
 import com.baomidou.mybatisplus.extension.conditions.query.QueryChainWrapper;
+import com.hmdp.config.RedissonConfig;
 import com.hmdp.controller.VoucherOrderController;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.SeckillVoucher;
@@ -13,6 +14,8 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -20,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>
@@ -38,6 +42,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private RedisIdWorker redisIdWorker;
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
+    @Autowired
+    private RedissonClient redissonClient;
     @Override
     public Result seckillVoucher(Long voucherId) {
         //秒杀下单：判断秒杀时间和优惠券库存
@@ -68,6 +74,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 //                .update();
         Long userId = UserHolder.getUser().getId();
 
+
        /*
        //用synchronize锁用户，实现一人一单——无法处理集群服务器情况
        //每个服务器都有一个锁监视器，因此需要使用分布式锁的技术——多个服务器一个锁监视器
@@ -79,9 +86,12 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }
         */
 
-        //使用redis分布式锁实现一人一单
-        SimpleRedisLock lock = new SimpleRedisLock("VoucherOrder" + userId, stringRedisTemplate);
-        boolean isLock = lock.tryLock(1200);
+        //方案一：使用自己写的redis分布式锁实现一人一单
+        //SimpleRedisLock lock = new SimpleRedisLock("VoucherOrder:" + userId, stringRedisTemplate);
+
+        //方案二：使用redisson来搞分布式锁
+        RLock lock = redissonClient.getLock("lock: VoucherOrder:" + userId);
+        boolean isLock = lock.tryLock();//默认参数 失败立即返回（-1），超时30s自动释放
         if(!isLock){
             return Result.fail("不允许重复下单");
         }
@@ -90,7 +100,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             IVoucherOrderService proxy = (IVoucherOrderService)AopContext.currentProxy();
             return proxy.createVoucherOrder(voucherId,userId);
         }finally {
-            lock.unLock();
+            lock.unlock();
         }
 
 
