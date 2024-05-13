@@ -12,6 +12,7 @@ import com.hmdp.utils.SystemConstants;
 import com.hmdp.utils.UserHolder;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.Generated;
 import javax.annotation.Resource;
 import java.util.List;
 
@@ -72,5 +73,16 @@ public class BlogController {
     @GetMapping("/likes/{id}")
     public Result queryBlogLikes(@PathVariable("id") Long id){
         return blogService.queryBlogLikes(id);
+    }
+
+    @GetMapping("/of/user")
+    //@RequestParam——用于把http传的参数搞下来：具体有两种常见用法，没有设搞到http的就设置默认值和直接搞到http中请求
+    public Result queryBlogUserById(@RequestParam(value = "current",defaultValue = "1") Integer current,
+                                    @RequestParam("id") Long id){
+        //根据用户完成分页查询
+        Page<Blog> page = blogService.query().eq("user_id",id).page(new Page<>(current,SystemConstants.MAX_PAGE_SIZE));
+        //把page解析成前端能接受的list返回——获取当前页数据
+        List<Blog> records = page.getRecords();
+        return Result.ok(records);
     }
 }
