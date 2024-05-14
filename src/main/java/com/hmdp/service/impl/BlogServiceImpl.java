@@ -5,20 +5,25 @@ import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hmdp.dto.Result;
+import com.hmdp.dto.ScrollResult;
 import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.Blog;
+import com.hmdp.entity.Follow;
 import com.hmdp.entity.User;
 import com.hmdp.mapper.BlogMapper;
 import com.hmdp.service.IBlogService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.service.IFollowService;
 import com.hmdp.service.IUserService;
 import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.SystemConstants;
 import com.hmdp.utils.UserHolder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -36,6 +41,8 @@ import java.util.stream.Stream;
 @Service
 public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IBlogService {
 
+    @Autowired
+    private IFollowService followService;
     @Autowired
     private IUserService userService;
     @Autowired
@@ -126,6 +133,72 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
                 stream().
                 map(user -> BeanUtil.copyProperties(user, UserDTO.class)).collect(Collectors.toList());
         return Result.ok(userDTOs);
+    }
+
+    @Override
+    public Result saveBlog(Blog blog) {
+        //获取当前用户，保存用户笔记到sql
+        Long userId = UserHolder.getUser().getId();
+        blog.setUserId(userId);
+        boolean isSuccess = save(blog);
+        if(!isSuccess){
+            return Result.fail("新增笔记失败");
+        }
+        //查粉丝
+        List<Follow> follows = followService.query().eq("follow_user_id", userId).list();
+        for(Follow follow:follows){
+            Long followId = follow.getUserId();//粉丝id
+            //推送——推模式的每个收件箱都使用zset(key,blogid，score：时间戳），后面收件箱根据（score）时间戳排序
+            String key = RedisConstants.FEED_KEY + followId;
+            stringRedisTemplate.opsForZSet().add(key,blog.getId().toString(),System.currentTimeMillis());
+        }
+        //用feed流的推模式，推送发布blog内容给所有粉丝
+        return Result.ok(blog.getId());
+    }
+
+    @Override
+    public Result queryBlogOfFollow(Long max, Integer offset) {
+        Long userId = UserHolder.getUser().getId();
+        String key = RedisConstants.FEED_KEY + userId;
+        //min,max,offset,count
+        Set<ZSetOperations.TypedTuple<String>> typedTuples = stringRedisTemplate.
+                opsForZSet().reverseRangeByScoreWithScores(key, 0, max, offset, 3);
+        if(typedTuples.isEmpty() || typedTuples == null){
+            return Result.ok();
+        }
+        List<Long> ids = new ArrayList<>(typedTuples.size());
+        //解析数据：最小时间戳minTime和offset
+        long minTime = 0;
+        int count = 1;
+        for(ZSetOperations.TypedTuple<String> typedTuple:typedTuples){
+            String idStr = typedTuple.getValue();
+            ids.add(Long.valueOf(idStr));//parse返回基本类型，valueOf则是返回包装类
+            long temp = typedTuple.getScore().longValue();
+
+            if(minTime == temp){
+                count++;
+            }else{
+                count = 1;
+                minTime = temp;
+            }
+        }
+        String idStr = StrUtil.join(",", ids);
+        List<Blog> blogs = query().
+                in("id",ids).
+                last("ORDER BY FIELD(id," + idStr + ")").//last是在sql语句末添加自己写的语句
+                list();//list()就是查出list
+        //查blog同时查点赞信息和用户信息别忘了
+        for(Blog blog:blogs){
+            queryUser(blog);
+            isBlogLiked(blog);
+        }
+
+        //封装滚动分页对象，并返回
+        ScrollResult res = new ScrollResult();
+        res.setList(blogs);
+        res.setOffset(count);
+        res.setMinTime(minTime);
+        return Result.ok(res);
     }
 
     public void queryUser(Blog blog){

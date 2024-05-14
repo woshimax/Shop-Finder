@@ -35,13 +35,7 @@ public class BlogController {
 
     @PostMapping
     public Result saveBlog(@RequestBody Blog blog) {
-        // 获取登录用户
-        UserDTO user = UserHolder.getUser();
-        blog.setUserId(user.getId());
-        // 保存探店博文
-        blogService.save(blog);
-        // 返回id
-        return Result.ok(blog.getId());
+        return blogService.saveBlog(blog);
     }
 
     @PutMapping("/like/{id}")
@@ -84,5 +78,11 @@ public class BlogController {
         //把page解析成前端能接受的list返回——获取当前页数据
         List<Blog> records = page.getRecords();
         return Result.ok(records);
+    }
+    @GetMapping( "/of/follow")
+    public Result queryBlogOfFollow(@RequestParam("lastId") Long max,//第一次来的时候offset是没有的，max是有的——当前时间，
+                                    // 因此给offset是指默认值防止空指针
+                                    @RequestParam(value = "offset",defaultValue = "0") Integer offset){
+        return blogService.queryBlogOfFollow(max,offset);
     }
 }

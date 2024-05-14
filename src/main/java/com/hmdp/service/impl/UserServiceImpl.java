@@ -13,6 +13,7 @@ import com.hmdp.mapper.UserMapper;
 import com.hmdp.service.IUserService;
 import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.RegexUtils;
+import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +21,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
 
 import java.util.HashMap;
@@ -111,6 +113,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
             return Result.ok(userDTO);
         }
+        return Result.ok();
+    }
+
+    @Override
+    public Result logout(HttpServletRequest httpServletRequest) {
+
+        String token = httpServletRequest.getHeader("authorization");
+        String tokenKey = LOGIN_USER_KEY + token;
+        redisTemplate.delete(tokenKey);
+        UserHolder.removeUser();
         return Result.ok();
     }
 
