@@ -4,7 +4,6 @@ package com.hmdp.controller;
 import com.hmdp.dto.LoginFormDTO;
 import com.hmdp.dto.Result;
 import com.hmdp.dto.UserDTO;
-import com.hmdp.entity.User;
 import com.hmdp.entity.UserInfo;
 import com.hmdp.service.IUserInfoService;
 import com.hmdp.service.IUserService;
@@ -87,5 +86,15 @@ public class UserController {
     @GetMapping("/{id}")
     public Result queryUserById(@PathVariable("id") Long id){
         return userService.queryUserById(id);
+    }
+
+    @PostMapping("/sign")
+    public Result sign(){
+        return userService.sign();
+    }
+
+    @GetMapping("/sign/count")
+    public Result signCount(){
+        return userService.signCount();
     }
 }

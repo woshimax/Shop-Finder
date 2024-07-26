@@ -2,9 +2,8 @@ package com.hmdp;
 
 import com.hmdp.entity.Shop;
 import com.hmdp.service.IShopService;
-import com.hmdp.service.impl.ShopServiceImpl;
+import com.hmdp.utils.RedisConstants;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.geo.Point;
 import org.springframework.data.redis.connection.RedisGeoCommands;
@@ -29,12 +28,13 @@ public class HmDianPingApplicationTests {
         List<Shop> list = shopService.list();
         //利用stream将list转map
         //根据typeId分类，key为typeId，value为店铺的list，List为——这里转map是为了后面方便分类处理
-        Map<Long,List<Shop>> map = list.stream().collect(Collectors.groupingBy(shop->shop.getTypeId()));
+        Map<Long,List<Shop>> map = list.stream().collect(Collectors.groupingBy(Shop::getTypeId));
         //分批完成写入redis
         for(Map.Entry<Long,List<Shop>> entry:map.entrySet()){
             Long typeId = entry.getKey();
             //用typeId来作为geo的key
-            String key = "shop:geo" + typeId;
+            //这里没有用Constant，结果和我查找的key不一样，查不到！！！一定要用常量统一一下，不要写死在程序里
+            String key = RedisConstants.SHOP_GEO_KEY + typeId;
             //获取同类店铺的集合
             List<Shop> value = entry.getValue();
             List<RedisGeoCommands.GeoLocation<String>> locations = new ArrayList<>(value.size());

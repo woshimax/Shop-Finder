@@ -11,20 +11,21 @@ import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.User;
 import com.hmdp.mapper.UserMapper;
 import com.hmdp.service.IUserService;
-import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.RegexUtils;
 import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -43,7 +44,7 @@ import static com.hmdp.utils.SystemConstants.USER_NICK_NAME_PREFIX;
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IUserService {
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private StringRedisTemplate stringRedisTemplate;
     @Override
     public Result sendCode(String phone, HttpSession session) {
         //校验手机号合法
@@ -58,7 +59,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         redis满足数据共享，内存存储，同时也是key-value形式
         */
         //改成保存到redis——注意设置验证码有效期
-        redisTemplate.opsForValue().set(LOGIN_CODE_KEY +phone,code,LOGIN_CODE_TTL, TimeUnit.MINUTES);
+        stringRedisTemplate.opsForValue().set(LOGIN_CODE_KEY +phone,code,LOGIN_CODE_TTL, TimeUnit.MINUTES);
 
         //发送验证码
         log.debug("发送验证码成功，验证码为：{}",code);
@@ -75,7 +76,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         //从session获取验证码改成——从redis获取验证码
         //Object code = session.getAttribute("code");
 
-        String code = redisTemplate.opsForValue().get(LOGIN_CODE_KEY + phone);
+        String code = stringRedisTemplate.opsForValue().get(LOGIN_CODE_KEY + phone);
         String code1 = loginForm.getCode();
         if(code == null || !code.equals(code1)){
             return Result.fail("验证码错误");
@@ -100,9 +101,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
                 CopyOptions.create().setIgnoreNullValue(true).setFieldValueEditor((fieldName,fieldValue)->(fieldValue.toString())));
 
         //3、存入
-        redisTemplate.opsForHash().putAll(LOGIN_USER_KEY+token,userMap);
+        stringRedisTemplate.opsForHash().putAll(LOGIN_USER_KEY+token,userMap);
         //4、设置有效期——无操作的30分钟后失效
-        redisTemplate.expire(LOGIN_USER_KEY+token,LOGIN_USER_TTL,TimeUnit.MINUTES);
+        stringRedisTemplate.expire(LOGIN_USER_KEY+token,LOGIN_USER_TTL,TimeUnit.MINUTES);
         return Result.ok(token);
     }
 
@@ -121,8 +122,65 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
         String token = httpServletRequest.getHeader("authorization");
         String tokenKey = LOGIN_USER_KEY + token;
-        redisTemplate.delete(tokenKey);
+        stringRedisTemplate.delete(tokenKey);
         UserHolder.removeUser();
+        return Result.ok();
+    }
+
+    @Override
+    public Result signCount() {
+        Long userId = UserHolder.getUser().getId();
+        LocalDateTime now = LocalDateTime.now();
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(":yyyyMM"));
+        String key = USER_SIGN_KEY + userId + keySuffix;
+        int dayOfMonth = now.getDayOfMonth();
+        //bitfield命令可以同时做get，set等多个命令（相当于命令集合体）
+        //因此这个返回结果就可以说明了：一种命令对应一个结果，一堆命令集合返回的就是list
+        //获取本月连续到今天到签到信息
+        List<Long> result = stringRedisTemplate.opsForValue().bitField(
+                key,
+                BitFieldSubCommands.create().
+                        get(BitFieldSubCommands.BitFieldType.unsigned(dayOfMonth)).valueAt(0)
+                        //这里dayOfMonth传入是指定总共几位，valueAt（）则是从第几位开始
+        );
+
+        if(result == null){
+            return Result.ok(0);
+        }
+
+        Long num = result.get(0);
+        if(num == null || num == 0){
+            return Result.ok(0);
+        }
+        log.info("signNum:"+num);
+        int count = 0;
+        //遍历获取到的二进制串
+        while(true){
+            //和1做与运算（判断最后一位），运算完就右移
+            if((num & 1) == 0){//
+                break;
+            }else{
+                count++;
+                num = num >>> 1;
+            }
+        }
+        return Result.ok(count );
+    }
+
+    @Override
+    public Result sign() {
+        //获取当前用户
+        Long userId = UserHolder.getUser().getId();
+        //获取当天时间
+        LocalDateTime now = LocalDateTime.now();
+        //拼接key
+        //格式化月+年
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(":yyyyMM"));
+        String key = USER_SIGN_KEY + userId + keySuffix;
+        //获取当前是第几天——用于bitmap操作(bitmap操作的偏移量offset）
+        int dayOfMonth = now.getDayOfMonth();
+        //bitmap底层是string
+        stringRedisTemplate.opsForValue().setBit(key,dayOfMonth-1,true);
         return Result.ok();
     }
 
