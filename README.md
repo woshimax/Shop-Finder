@@ -2,7 +2,7 @@
 ## 一、短息校验登陆  
 传统session登陆弊端：在多服务器（分布式）情况下，登陆信息难以实现共享和同步  
 核心功能：改进基本的session登陆，使用redis和双重拦截器完成登陆校验和登陆状态的刷新，其中利用redis来实现登陆信息的多服务器共享和同步  
-!image(https://github.com/woshimax/Shop-Finder/blob/master/img/login.png)
+![image](https://github.com/woshimax/Shop-Finder/blob/master/img/login.png)
 ## 二、商户查询缓存  
 最基本的使用缓存的思路：先查缓存，命中则直接返回，未命中则查数据库，存到缓存中，然后返回
 
@@ -19,7 +19,7 @@
 互斥锁解决方案的关键点：获取锁成功后需要再做一次redis查询，保证在一个线程更新缓存之后，另一个线程能直接用最新的缓存，而不需要再查数据库  
 
 其中缓存穿透和缓存击穿其实都是在未命中的时候，需要我们去使用相关方式去解决  
-!image(https://github.com/woshimax/Shop-Finder/blob/master/img/shop_get.png)
+![image](https://github.com/woshimax/Shop-Finder/blob/master/img/shop_get.png)
 ## 三、优惠券秒杀  
 
 ### 1、解决超卖问题  
@@ -35,7 +35,7 @@
 一个线程处理校验操作（处理比较快的操作），一个线程处理创建订单操作（处理比较慢，涉及数据库的操作）  
 其中，判断库存和一人一单交给Redis的lua脚本判断：判断通过则开启异步线程处理订单，并返回订单id；判断不通过则返回异常信息  
 在处理订单这里设置消息队列：第一次使用java自带阻塞队列，适用于单机；第二次进行优化：用Redis的Stream模拟消息队列  
-!image(https://github.com/woshimax/Shop-Finder/blob/master/img/order.png)
+![image](https://github.com/woshimax/Shop-Finder/blob/master/img/order.png)
 
 
 
