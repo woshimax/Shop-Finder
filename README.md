@@ -37,5 +37,7 @@
 在处理订单这里设置消息队列：第一次使用java自带阻塞队列，适用于单机；第二次进行优化：用Redis的Stream模拟消息队列  
 ![image](https://github.com/woshimax/Shop-Finder/blob/master/img/order.png)
 
+# 拉马克到此一游
+
 
 
